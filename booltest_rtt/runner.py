@@ -205,7 +205,6 @@ class AsyncRunner:
         out_cur, err_cur = [""], [""]
 
         def process_line(line, is_err=False):
-            if not is_err: print('??[[', line, ']]\n')
             dst = self.err_acc if is_err else self.out_acc
             dst.append(line)
             if self.log_out_during:
@@ -219,7 +218,6 @@ class AsyncRunner:
                 self.on_output(self, line, is_err)
 
         def add_output(buffers, is_err=False, finish=False):
-            if not is_err: print('!!', len(buffers), buffers, '\n')
             buffers = [x.decode("utf8") for x in buffers]
             lines = [""]
 
@@ -232,12 +230,10 @@ class AsyncRunner:
             nlines = len(lines)
             dst_cur[0] += lines[0]
             if nlines > 1:
-                if not is_err: print('---nl1', nlines, '||', dst_cur[0], '\n', 'lns', lines, '\n')
                 process_line(dst_cur[0], is_err)
                 dst_cur[0] = ""
 
             for line in lines[1:-1]:
-                if not is_err: print('---nl2\n')
                 process_line(line, is_err)
 
             if not finish and nlines > 1:
@@ -245,9 +241,7 @@ class AsyncRunner:
 
             if finish and (lines[-1] or dst_cur[0]):
                 cline = dst_cur[0] if nlines == 1 else lines[-1]
-                if not is_err: print('---nl3\n')
                 process_line(cline, is_err)
-                if not is_err: print('---nl4', out_cur, '\n')
 
         try:
             while len(p.commands) == 0:
