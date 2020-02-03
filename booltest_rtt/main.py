@@ -224,7 +224,7 @@ class BoolRunner:
             pvalue = -1
             if self.is_halving_battery():
                 pvals = [r.pval for r in ok_results]
-                pvalue = merge_pvals(pvals) if len(pvals) > 1 else -1
+                pvalue = merge_pvals(pvals)[0] if len(pvals) > 1 else -1
 
             else:
                 rejects = [r for r in ok_results if r.rejects]
