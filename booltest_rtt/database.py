@@ -131,6 +131,41 @@ class MySQL(object):
 
 
 #
+# Helper functions
+#
+
+
+def silent_close(c, quiet=True):
+    # noinspection PyBroadException
+    try:
+        if c is not None:
+            c.close()
+    except Exception as e:
+        if not quiet:
+            logger.error('Close exception: %s' % e)
+
+
+def silent_rollback(c, quiet=True):
+    # noinspection PyBroadException
+    try:
+        if c is not None:
+            c.rollback()
+    except Exception as e:
+        if not quiet:
+            logger.error('Rollback exception: %s' % e)
+
+
+def silent_expunge_all(c, quiet=True):
+    # noinspection PyBroadException
+    try:
+        if c is not None:
+            c.expunge_all()()
+    except Exception as e:
+        if not quiet:
+            logger.error('Expunge exception: %s' % e)
+
+
+#
 # DB Entities
 #
 
@@ -193,6 +228,8 @@ class Batteries(Base):
                            nullable=False, index=True, primary_key=False)
     job_id = Column(ForeignKey('jobs.id', name='batteries_jobs__id', ondelete='CASCADE'),
                     nullable=False, index=True, primary_key=False)
+    experiment = relationship('Experiments', foreign_keys=experiment_id)
+    job = relationship('Jobs', foreign_keys=job_id)
 
 
 class BatteryErrors(Base):
@@ -201,6 +238,7 @@ class BatteryErrors(Base):
     message = Column(Text, nullable=False)
     battery_id = Column(ForeignKey('batteries.id', name='battery_errors_batteries_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    battery = relationship('Batteries', foreign_keys=battery_id)
 
 
 class BatteryWarnings(Base):
@@ -209,6 +247,7 @@ class BatteryWarnings(Base):
     message = Column(Text, nullable=False)
     battery_id = Column(ForeignKey('batteries.id', name='battery_warnings_batteries_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    battery = relationship('Batteries', foreign_keys=battery_id)
 
 
 class Tests(Base):
@@ -220,6 +259,7 @@ class Tests(Base):
     test_index = Column(Integer, nullable=False)
     battery_id = Column(ForeignKey('batteries.id', name='tests_batteries_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    battery = relationship('Batteries', foreign_keys=battery_id)
 
 
 class Variants(Base):
@@ -228,6 +268,7 @@ class Variants(Base):
     variant_index = Column(Integer, nullable=False)
     test_id = Column(ForeignKey('tests.id', name='variants_tests_id', ondelete='CASCADE'),
                      nullable=False, index=True, primary_key=False)
+    test = relationship('Tests', foreign_keys=test_id)
 
 
 class VariantsErrors(Base):
@@ -236,6 +277,7 @@ class VariantsErrors(Base):
     message = Column(Text, nullable=False)
     variant_id = Column(ForeignKey('variants.id', name='variant_errors_variants_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    variant = relationship('Variants', foreign_keys=variant_id)
 
 
 class VariantWarnings(Base):
@@ -244,6 +286,7 @@ class VariantWarnings(Base):
     message = Column(Text, nullable=False)
     variant_id = Column(ForeignKey('variants.id', name='variant_warnings_variants_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    variant = relationship('Variants', foreign_keys=variant_id)
 
 
 class VariantStderr(Base):
@@ -252,6 +295,16 @@ class VariantStderr(Base):
     message = Column(Text, nullable=False)
     variant_id = Column(ForeignKey('variants.id', name='variant_stderr_variants_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    variant = relationship('Variants', foreign_keys=variant_id)
+
+
+class VariantResults(Base):
+    __tablename__ = 'variant_results'
+    id = Column(BigInteger, primary_key=True)
+    message = Column(Text, nullable=False)
+    variant_id = Column(ForeignKey('variants.id', name='variant_results_variants_id', ondelete='CASCADE'),
+                        nullable=False, index=True, primary_key=False)
+    variant = relationship('Variants', foreign_keys=variant_id)
 
 
 class UserSettings(Base):
@@ -261,6 +314,7 @@ class UserSettings(Base):
     value = Column(String(50), nullable=False)
     variant_id = Column(ForeignKey('variants.id', name='user_settings_variants_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    variant = relationship('Variants', foreign_keys=variant_id)
 
 
 class RttSettings(Base):
@@ -277,6 +331,7 @@ class Subtests(Base):
     subtest_index = Column(Integer, nullable=False)
     variant_id = Column(ForeignKey('variants.id', name='subtests_variants_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    variant = relationship('Variants', foreign_keys=variant_id)
 
 
 class Statistics(Base):
@@ -287,6 +342,7 @@ class Statistics(Base):
     result = Column(Enum(TestResultEnum), nullable=False)
     subtest_id = Column(ForeignKey('subtests.id', name='statistics_subtests_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    subtest = relationship('Subtests', foreign_keys=subtest_id)
 
 
 class TestParameters(Base):
@@ -296,6 +352,7 @@ class TestParameters(Base):
     value = Column(String(50), nullable=False)
     subtest_id = Column(ForeignKey('subtests.id', name='test_parameters_subtests_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    subtest = relationship('Subtests', foreign_keys=subtest_id)
 
 
 class Pvalues(Base):
@@ -304,6 +361,7 @@ class Pvalues(Base):
     value = Column(Float, nullable=False)
     subtest_id = Column(ForeignKey('subtests.id', name='p_values_subtests_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    subtest = relationship('Subtests', foreign_keys=subtest_id)
 
 
 class Workers(Base):

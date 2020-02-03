@@ -20,6 +20,7 @@ install_requires = [
     'SqlAlchemy-Enum-Tables',
     'pymysql',
     'shellescape',
+    'scipy',
 
 ]
 

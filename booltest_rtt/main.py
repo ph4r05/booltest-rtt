@@ -11,8 +11,12 @@ import time
 import queue
 from jsonpath_ng import jsonpath, parse
 
-from .database import MySQL
+from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
+    TestResultEnum, VariantStderr, VariantResults, BatteryErrors, \
+    Subtests, Statistics, TestParameters, Pvalues, \
+    silent_close, silent_expunge_all, silent_rollback
 from .runner import AsyncRunner
+from .utils import merge_pvals, booltest_pval
 
 
 logger = logging.getLogger(__name__)
@@ -42,13 +46,26 @@ class BoolParamGen:
 
 
 class BoolJob:
-    def __init__(self, cli, name, vinfo=''):
+    def __init__(self, cli, name, vinfo='', idx=None):
         self.cli = cli
         self.name = name
         self.vinfo = vinfo
+        self.idx = idx
 
     def is_halving(self):
         return '--halving' in self.cli
+
+
+class BoolRes:
+    def __init__(self, job, ret_code, js_res, is_halving, rejects=False, pval=None, alpha=None, stderr=None):
+        self.job = job  # type: BoolJob
+        self.ret_code = ret_code
+        self.js_res = js_res
+        self.is_halving = is_halving
+        self.rejects = rejects
+        self.alpha = alpha
+        self.pval = pval
+        self.stderr = stderr
 
 
 class BoolRunner:
@@ -62,6 +79,7 @@ class BoolRunner:
         self.job_queue = queue.Queue(maxsize=0)
         self.runners = []  # type: List[Optional[AsyncRunner]]
         self.comp_jobs = []  # type: List[Optional[BoolJob]]
+        self.results = []
 
     def init_config(self):
         self.parallel_tasks = self.args.threads or 1
@@ -139,27 +157,131 @@ class BoolRunner:
             time.sleep(1)
         logger.info("Async command finished")
 
-    def on_finished(self, job, results):
-        # TODO: process
+    def on_finished(self, job, runner, idx):
+        if runner.ret_code != 0:
+            logger.warning("Return code of job %s is %s" % (idx, runner.ret_code))
+            stderr = (''.join(runner.err_acc)).strip()
+            br = BoolRes(job, runner.ret_code, None, job.is_halving, stderr=stderr)
+            self.results.append(br)
+            return
+
+        results = runner.out_acc
         buff = (''.join(results)).strip()
         try:
             js = json.loads(buff)
             # print(json.dumps(js, indent=2))
 
             is_halving = js['halving']
+            br = BoolRes(job, 0, js, is_halving)
+
             if not is_halving:
-                rejects = [m.value for m in parse('$.inputs[0].res[0].rejects').find(js)][0]
-                print('rejects:', rejects)
+                br.rejects = [m.value for m in parse('$.inputs[0].res[0].rejects').find(js)][0]
+                br.alpha = [m.value for m in parse('$.inputs[0].res[0].ref_alpha').find(js)][0]
+                print('rejects: %s, at alpha %.5e' % (br.rejects, br.alpha))
+
             else:
-                pval = [m.value for m in parse('$.inputs[0].res[1].halvings[0].pval').find(js)][0]
-                print('halving pval:', pval)
+                br.pval = [m.value for m in parse('$.inputs[0].res[1].halvings[0].pval').find(js)][0]
+                print('halving pval:', br.pval)
+
+            self.results.append(br)
 
         except Exception as e:
             logger.error("Exception processing results: %s" % (e,), exc_info=e)
             print("[[[%s]]]" % buff)
 
+    def on_results_ready(self):
+        if self.args.no_db or self.args.eid < 0 or self.args.jid < 0:
+            logger.info("Results will not be inserted to the database. ")
+            return
+
+        s = None
+        try:
+            s = self.db.get_session()
+            job_db = s.query(Jobs).filter(Jobs.id == self.args.jid).first()
+            exp_db = s.query(Experiments).filter(Experiments.id == self.args.eid).first()
+
+            if not job_db:
+                logger.info("Results store fail, could not load Job with id %s" % (self.args.jid,))
+                return
+
+            if not exp_db:
+                logger.info("Results store fail, could not load Experiment with id %s" % (self.args.eid,))
+                return
+
+            bat_db = Batteries(name=self.args.battery, passed_tests=0, total_tests=1, alpha=self.args.alpha,
+                               experiment_id=self.args.eid, job_id=self.args.jid)
+            s.add(bat_db)
+            s.flush()
+
+            bat_errors = ['Job %d (%s-%s), ret_code %d' % (r.job.idx, r.job.name, r.job.vinfo, r.ret_code)
+                          for r in self.results if r.ret_code != 0]
+            if bat_errors:
+                bat_err_db = BatteryErrors(message='\n'.join(bat_errors), battery=bat_db)
+                s.add(bat_err_db)
+
+            ok_results = [r for r in self.results if r.ret_code == 0]
+            pvalue = -1
+            if self.is_halving_battery():
+                pvals = [r.pval for r in ok_results]
+                pvalue = merge_pvals(pvals) if len(pvals) > 1 else -1
+
+            else:
+                rejects = [r for r in ok_results if r.rejects]
+                alpha = max([x.alpha for x in ok_results])
+                pvalue = booltest_pval(nfails=len(rejects), ntests=len(ok_results), alpha=alpha)
+
+            test_db = Tests(name=self.args.battery, partial_alpha=pvalue,
+                            result=TestResultEnum.failed if pvalue < self.args.alpha else TestResultEnum.passed,
+                            test_index=0, battery=bat_db)
+            s.add(test_db)
+            bat_db.passed_tests = test_db.result == TestResultEnum.passed
+            bat_db = s.merge(bat_db)
+
+            for rs in self.results:  # type: BoolRes
+                var_db = Variants(variant_index=rs.job.idx, test=test_db)
+                s.add(var_db)
+
+                if rs.ret_code != 0:
+                    var_err_db = VariantStderr(message=rs.stderr, variant=var_db)
+                    s.add(var_err_db)
+                    continue
+
+                var_res_db = VariantResults(message=json.dumps(rs.js_res), variant=var_db)
+                s.add(var_res_db)
+
+                sub_db = Subtests(subtest_index=0, variant=var_db)
+                s.add(sub_db)
+
+                if rs.is_halving:
+                    st_db = Statistics(name="pvalue", value=rs.pval, result=TestResultEnum.passed, subtest=sub_db)
+                    pv_db = Pvalues(value=rs.pval, subtest=sub_db)
+                    s.add(st_db)
+                    s.add(pv_db)
+
+                else:
+                    cpval = rs.alpha - 1e9 if rs.rejects else 1
+                    st_db = Statistics(name="pvalue", value=cpval, result=TestResultEnum.passed, subtest=sub_db)
+                    tp_db = TestParameters(name="alpha", value=rs.alpha, subtest=sub_db)
+                    s.add(st_db)
+                    s.add(tp_db)
+
+            s.commit()
+
+        except Exception as e:
+            logger.warning("Exception in storing results: %s" % (e,), exc_info=e)
+
+        finally:
+            silent_expunge_all(s)
+            silent_close(s)
+
+    def is_halving_battery(self):
+        return self.args.battery == 'booltest_2'
+
     def work(self):
-        jobs = self.generate_jobs()
+        jobs = [x for x in self.generate_jobs() if x.is_halving() == (self.is_halving_battery())]
+        for i, j in enumerate(jobs):
+            j.idx = i
+
         self.runners = [None] * self.parallel_tasks
         self.comp_jobs = [None] * self.parallel_tasks
 
@@ -177,12 +299,8 @@ class BoolRunner:
                 was_empty = self.runners[i] is None
                 if not was_empty:
                     self.job_queue.task_done()
-                    if self.runners[i].ret_code != 0:
-                        logger.warning("Return code of job %s is %s" % (i, self.runners[i].ret_code))
-
-                    else:
-                        logger.info("Task %d done" % (i,))
-                        self.on_finished(self.comp_jobs[i], self.runners[i].out_acc)
+                    logger.info("Task %d done" % (i,))
+                    self.on_finished(self.comp_jobs[i], self.runners[i], i)
 
                 # Start a new task, if any
                 try:
@@ -197,11 +315,7 @@ class BoolRunner:
                 logger.info("Starting async command %s %s, %s" % (job.name, job.vinfo, cli))
                 self.runners[i].start()
 
-        # TODO:
-        # - load experiment, job ID
-        # - load BoolTest config to execute
-        # - generate jobs, compute, extract info, add to the database
-        pass
+        self.on_results_ready()
 
     def main(self):
         logger.debug('App started')
@@ -237,6 +351,8 @@ class BoolRunner:
                             help='Experiment dir')
         parser.add_argument('--no-db', dest='no_db', action='store_const', const=True,
                             help='No database connection')
+        parser.add_argument('--alpha', dest='alpha', type=float, default=1e-4,
+                            help='Alpha value for pass/fail')
         parser.add_argument('-t', dest='threads', type=int, default=None,
                             help='Maximum parallel threads')
         return parser
