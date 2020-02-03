@@ -103,7 +103,8 @@ class BoolRunner:
             return
 
         db_cfg = [m.value for m in parse('"toolkit-settings"."result-storage"."mysql-db"').find(self.rtt_config)][0]
-        with open(db_cfg["credentials-file"]) as fh:
+        db_creds = self.args.db_creds if self.args.db_creds else db_cfg["credentials-file"]
+        with open(db_creds) as fh:
             creds = json.load(fh)
 
         uname = [m.value for m in parse('"credentials"."username"').find(creds)][0]
@@ -347,6 +348,8 @@ class BoolRunner:
                             help='MySQL host name')
         parser.add_argument('--db-port', dest='db_port', type=int, default=None,
                             help='MySQL port')
+        parser.add_argument('--db-creds', dest='db_creds',
+                            help='MySQL credentials json')
         parser.add_argument('--rpath',
                             help='Experiment dir')
         parser.add_argument('--no-db', dest='no_db', action='store_const', const=True,

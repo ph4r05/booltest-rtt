@@ -19,7 +19,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy import Column, DateTime, String, Integer, ForeignKey, func, Text, BigInteger, SmallInteger, Float, UnicodeText, Enum, TIMESTAMP, FLOAT
 from sqlalchemy.orm import sessionmaker, scoped_session, relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.mysql import INTEGER, LONGTEXT
+from sqlalchemy.dialects.mysql import INTEGER, LONGTEXT, BIGINT
 import sqlalchemy as sa
 from warnings import filterwarnings
 
@@ -264,7 +264,7 @@ class Tests(Base):
 
 class Variants(Base):
     __tablename__ = 'variants'
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BIGINT(unsigned=True), primary_key=True)
     variant_index = Column(Integer, nullable=False)
     test_id = Column(ForeignKey('tests.id', name='variants_tests_id', ondelete='CASCADE'),
                      nullable=False, index=True, primary_key=False)
