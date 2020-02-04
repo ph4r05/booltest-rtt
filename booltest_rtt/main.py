@@ -13,7 +13,7 @@ from jsonpath_ng import jsonpath, parse
 
 from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
     TestResultEnum, VariantStderr, VariantResults, BatteryErrors, \
-    Subtests, Statistics, TestParameters, Pvalues, \
+    Subtests, Statistics, TestParameters, Pvalues, UserSettings, \
     silent_close, silent_expunge_all, silent_rollback
 from .runner import AsyncRunner
 from .utils import merge_pvals, booltest_pval
@@ -224,23 +224,32 @@ class BoolRunner:
             pvalue = -1
             if self.is_halving_battery():
                 pvals = [r.pval for r in ok_results]
+                npassed = sum([1 for r in ok_results if r.pval < self.args.alpha])
                 pvalue = merge_pvals(pvals)[0] if len(pvals) > 1 else -1
 
             else:
                 rejects = [r for r in ok_results if r.rejects]
                 alpha = max([x.alpha for x in ok_results])
                 pvalue = booltest_pval(nfails=len(rejects), ntests=len(ok_results), alpha=alpha)
+                npassed = sum([1 for r in ok_results if not r.rejects])
 
-            test_db = Tests(name=self.args.battery, partial_alpha=pvalue,
-                            result=TestResultEnum.failed if pvalue < self.args.alpha else TestResultEnum.passed,
-                            test_index=0, battery=bat_db)
-            s.add(test_db)
-            bat_db.passed_tests = test_db.result == TestResultEnum.passed
+            bat_db.total_tests = len(ok_results)
+            bat_db.passed_tests = npassed
             bat_db = s.merge(bat_db)
 
             for rs in self.results:  # type: BoolRes
-                var_db = Variants(variant_index=rs.job.idx, test=test_db)
+                passed = (rs.pval < self.args.alpha if rs.is_halving else not rs.rejects) if rs.ret_code != 0 else None
+                passed_res = (TestResultEnum.passed if passed else TestResultEnum.failed) if passed is not None else TestResultEnum.passed
+
+                test_db = Tests(name="%s %s" % (rs.job.name, rs.job.vinfo), partial_alpha=self.args.alpha,
+                                result=passed_res, test_index=rs.job.idx, battery=bat_db)
+                s.add(test_db)
+
+                var_db = Variants(variant_index=0, test=test_db)
                 s.add(var_db)
+
+                uset_db = UserSettings(name="Cfg", value=rs.job.vinfo, variant=var_db)
+                s.add(uset_db)
 
                 if rs.ret_code != 0:
                     var_err_db = VariantStderr(message=rs.stderr, variant=var_db)
@@ -261,7 +270,7 @@ class BoolRunner:
 
                 else:
                     cpval = rs.alpha - 1e9 if rs.rejects else 1
-                    st_db = Statistics(name="pvalue", value=cpval, result=TestResultEnum.passed, subtest=sub_db)
+                    st_db = Statistics(name="pvalue", value=cpval, result=TestResultEnum.failed if rs.rejects else TestResultEnum.passed, subtest=sub_db)
                     tp_db = TestParameters(name="alpha", value=rs.alpha, subtest=sub_db)
                     s.add(st_db)
                     s.add(tp_db)
