@@ -319,7 +319,7 @@ class BoolRunner:
                     self.runners[i] = None
                     continue
 
-                cli = '%s %s %s' % (self.bool_wrapper, job.cli, self.args.data_path)
+                cli = '%s %s "%s"' % (self.bool_wrapper, job.cli, self.args.data_path)
                 self.comp_jobs[i] = job
                 self.runners[i] = get_runner(shlex.split(cli))
                 logger.info("Starting async command %s %s, %s" % (job.name, job.vinfo, cli))
