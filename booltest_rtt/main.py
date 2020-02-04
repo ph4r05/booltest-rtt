@@ -224,7 +224,7 @@ class BoolRunner:
             pvalue = -1
             if self.is_halving_battery():
                 pvals = [r.pval for r in ok_results]
-                npassed = sum([1 for r in ok_results if r.pval < self.args.alpha])
+                npassed = sum([1 for r in ok_results if r.pval >= self.args.alpha])
                 pvalue = merge_pvals(pvals)[0] if len(pvals) > 1 else -1
 
             else:
@@ -263,14 +263,14 @@ class BoolRunner:
                 s.add(sub_db)
 
                 if rs.is_halving:
-                    st_db = Statistics(name="pvalue", value=rs.pval, result=TestResultEnum.passed, subtest=sub_db)
+                    st_db = Statistics(name="pvalue", value=rs.pval, result=passed_res, subtest=sub_db)
                     pv_db = Pvalues(value=rs.pval, subtest=sub_db)
                     s.add(st_db)
                     s.add(pv_db)
 
                 else:
-                    cpval = rs.alpha - 1e9 if rs.rejects else 1
-                    st_db = Statistics(name="pvalue", value=cpval, result=TestResultEnum.failed if rs.rejects else TestResultEnum.passed, subtest=sub_db)
+                    cpval = rs.alpha - 1e-20 if rs.rejects else 1
+                    st_db = Statistics(name="pvalue", value=cpval, result=passed_res, subtest=sub_db)
                     tp_db = TestParameters(name="alpha", value=rs.alpha, subtest=sub_db)
                     s.add(st_db)
                     s.add(tp_db)
