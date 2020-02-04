@@ -238,7 +238,7 @@ class BoolRunner:
             bat_db = s.merge(bat_db)
 
             for rs in self.results:  # type: BoolRes
-                passed = (rs.pval >= self.args.alpha if rs.is_halving else not rs.rejects) if rs.ret_code != 0 else None
+                passed = (rs.pval >= self.args.alpha if rs.is_halving else not rs.rejects) if rs.ret_code == 0 else None
                 passed_res = (TestResultEnum.passed if passed else TestResultEnum.failed) if passed is not None else TestResultEnum.passed
 
                 test_db = Tests(name="%s %s" % (rs.job.name, rs.job.vinfo), partial_alpha=self.args.alpha,
