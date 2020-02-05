@@ -9,6 +9,7 @@ import itertools
 import shlex
 import time
 import queue
+import sys
 from jsonpath_ng import jsonpath, parse
 
 from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
@@ -87,13 +88,17 @@ class BoolRunner:
             with open(self.args.rtt_config) as fh:
                 self.rtt_config = json.load(fh)
 
-            self.bool_config = [m.value for m in parse('"toolkit-settings"."booltest"').find(self.rtt_config)][0]
-            self.bool_wrapper = [m.value for m in parse('$.wrapper').find(self.bool_config)][0]
+            self.bool_config = jsonpath('"toolkit-settings"."booltest"', self.rtt_config, False)
+            if not self.bool_wrapper:
+                self.bool_wrapper = jsonpath("$.wrapper", self.bool_config, True)
             if not self.args.threads:
-                self.parallel_tasks = [m.value for m in parse('$."toolkit-settings".execution."max-parallel-tests"').find(self.rtt_config)][0]
+                self.parallel_tasks = jsonpath('$."toolkit-settings".execution."max-parallel-tests"', self.rtt_config, True) or 1
 
         except Exception as e:
             logger.error("Could not load RTT config %s" % (e,), exc_info=e)
+
+        if not self.bool_wrapper:
+            self.bool_wrapper = "\"%s\" -m booltest.booltest_main" % sys.executable
 
     def init_db(self):
         if self.args.no_db:
