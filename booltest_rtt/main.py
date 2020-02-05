@@ -175,7 +175,6 @@ class BoolRunner:
         buff = (''.join(results)).strip()
         try:
             js = json.loads(buff)
-            # print(json.dumps(js, indent=2))
 
             is_halving = js['halving']
             br = BoolRes(job, 0, js, is_halving)
@@ -183,17 +182,17 @@ class BoolRunner:
             if not is_halving:
                 br.rejects = [m.value for m in parse('$.inputs[0].res[0].rejects').find(js)][0]
                 br.alpha = [m.value for m in parse('$.inputs[0].res[0].ref_alpha').find(js)][0]
-                print('rejects: %s, at alpha %.5e' % (br.rejects, br.alpha))
+                logger.info('rejects: %s, at alpha %.5e' % (br.rejects, br.alpha))
 
             else:
                 br.pval = [m.value for m in parse('$.inputs[0].res[1].halvings[0].pval').find(js)][0]
-                print('halving pval:', br.pval)
+                logger.info('halving pval:', br.pval)
 
             self.results.append(br)
 
         except Exception as e:
             logger.error("Exception processing results: %s" % (e,), exc_info=e)
-            print("[[[%s]]]" % buff)
+            logger.info("[[[%s]]]" % buff)
 
     def on_results_ready(self):
         if self.args.no_db or self.args.eid < 0 or self.args.jid < 0:
@@ -318,7 +317,8 @@ class BoolRunner:
                 was_empty = self.runners[i] is None
                 if not was_empty:
                     self.job_queue.task_done()
-                    logger.info("Task %d done" % (i,))
+                    logger.info("Task %d done, job queue size: %d, running: %s"
+                                % (i, self.job_queue.qsize(), sum([1 for x in self.runners if x])))
                     self.on_finished(self.comp_jobs[i], self.runners[i], i)
 
                 # Start a new task, if any
