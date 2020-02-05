@@ -186,7 +186,7 @@ class BoolRunner:
 
             else:
                 br.pval = [m.value for m in parse('$.inputs[0].res[1].halvings[0].pval').find(js)][0]
-                logger.info('halving pval:', br.pval)
+                logger.info('halving pval: %5e' % br.pval)
 
             self.results.append(br)
 
