@@ -228,6 +228,7 @@ class Batteries(Base):
                            nullable=False, index=True, primary_key=False)
     job_id = Column(ForeignKey('jobs.id', name='batteries_jobs__id', ondelete='CASCADE'),
                     nullable=False, index=True, primary_key=False)
+    pvalue = Column(Float, nullable=True)
     experiment = relationship('Experiments', foreign_keys=experiment_id)
     job = relationship('Jobs', foreign_keys=job_id)
 
@@ -259,6 +260,7 @@ class Tests(Base):
     test_index = Column(Integer, nullable=False)
     battery_id = Column(ForeignKey('batteries.id', name='tests_batteries_id', ondelete='CASCADE'),
                         nullable=False, index=True, primary_key=False)
+    pvalue = Column(Float, nullable=True)
     battery = relationship('Batteries', foreign_keys=battery_id)
 
 

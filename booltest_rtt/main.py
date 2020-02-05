@@ -235,6 +235,7 @@ class BoolRunner:
 
             bat_db.total_tests = len(ok_results)
             bat_db.passed_tests = npassed
+            bat_db.pvalue = pvalue
             bat_db = s.merge(bat_db)
 
             for rs in self.results:  # type: BoolRes
@@ -265,6 +266,7 @@ class BoolRunner:
                 if rs.is_halving:
                     st_db = Statistics(name="pvalue", value=rs.pval, result=passed_res, subtest=sub_db)
                     pv_db = Pvalues(value=rs.pval, subtest=sub_db)
+                    test_db.pvalue = rs.pval
                     s.add(st_db)
                     s.add(pv_db)
 
@@ -272,9 +274,11 @@ class BoolRunner:
                     cpval = rs.alpha - 1e-20 if rs.rejects else 1
                     st_db = Statistics(name="pvalue", value=cpval, result=passed_res, subtest=sub_db)
                     tp_db = TestParameters(name="alpha", value=rs.alpha, subtest=sub_db)
+                    test_db.pvalue = cpval
                     s.add(st_db)
                     s.add(tp_db)
 
+                s.merge(test_db)
             s.commit()
 
         except Exception as e:
