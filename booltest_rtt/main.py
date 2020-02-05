@@ -16,7 +16,7 @@ from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
     TestResultEnum, VariantStderr, VariantResults, BatteryErrors, \
     Subtests, Statistics, TestParameters, Pvalues, UserSettings, \
     silent_close, silent_expunge_all, silent_rollback
-from .runner import AsyncRunner
+from booltest.runner import AsyncRunner
 from .utils import merge_pvals, booltest_pval
 
 
