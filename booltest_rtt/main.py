@@ -161,7 +161,7 @@ class BoolRunner:
     def on_finished(self, job, runner, idx):
         if runner.ret_code != 0:
             logger.warning("Return code of job %s is %s" % (idx, runner.ret_code))
-            stderr = (''.join(runner.err_acc)).strip()
+            stderr = ("\n".join(runner.err_acc)).strip()
             br = BoolRes(job, runner.ret_code, None, job.is_halving, stderr=stderr)
             self.results.append(br)
             return
