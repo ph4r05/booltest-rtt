@@ -9,14 +9,11 @@ from pymysql.err import Warning as MySQLWarning
 
 pymysql.install_as_MySQLdb()
 
-import enumtables as et
 from sqlalchemy import create_engine, UniqueConstraint, ColumnDefault, Index
 from sqlalchemy import exc as sa_exc
-from sqlalchemy import orm
 from sqlalchemy.sql import expression
 from sqlalchemy.sql.elements import and_
-from sqlalchemy.ext.compiler import compiles
-from sqlalchemy import Column, DateTime, String, Integer, ForeignKey, func, Text, BigInteger, SmallInteger, Float, UnicodeText, Enum, TIMESTAMP, FLOAT
+from sqlalchemy import Column, DateTime, String, Integer, ForeignKey, func, Text, BigInteger, Float, UnicodeText, Enum, TIMESTAMP, FLOAT
 from sqlalchemy.orm import sessionmaker, scoped_session, relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.mysql import INTEGER, LONGTEXT, BIGINT
