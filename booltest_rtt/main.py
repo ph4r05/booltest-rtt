@@ -295,6 +295,9 @@ class BoolRunner:
     def is_halving_battery(self):
         return self.args.battery == 'booltest_2'
 
+    def get_num_running(self):
+        return sum([1 for x in self.runners if x])
+
     def work(self):
         jobs = [x for x in self.generate_jobs() if x.is_halving() == (self.is_halving_battery())]
         for i, j in enumerate(jobs):
@@ -305,6 +308,9 @@ class BoolRunner:
 
         for j in jobs:
             self.job_queue.put_nowait(j)
+
+        logger.info("Starting BoolTest runner, threads: %s, jobs: %s, wrapper: %s"
+                    % (self.parallel_tasks, self.job_queue.qsize(), self.bool_wrapper))
 
         while not self.job_queue.empty() or sum([1 for x in self.runners if x is not None]) > 0:
             time.sleep(0.1)
@@ -318,7 +324,7 @@ class BoolRunner:
                 if not was_empty:
                     self.job_queue.task_done()
                     logger.info("Task %d done, job queue size: %d, running: %s"
-                                % (i, self.job_queue.qsize(), sum([1 for x in self.runners if x])))
+                                % (i, self.job_queue.qsize(), self.get_num_running()))
                     self.on_finished(self.comp_jobs[i], self.runners[i], i)
 
                 # Start a new task, if any
@@ -326,6 +332,7 @@ class BoolRunner:
                     job = self.job_queue.get_nowait()  # type: BoolJob
                 except queue.Empty:
                     self.runners[i] = None
+                    logger.info("No more jobs, running: %s" % (self.get_num_running(), ))
                     continue
 
                 cli = '%s %s "%s"' % (self.bool_wrapper, job.cli, self.args.data_path)
@@ -333,7 +340,8 @@ class BoolRunner:
                 self.runners[i] = get_runner(shlex.split(cli))
                 logger.info("Starting async command %s %s, %s" % (job.name, job.vinfo, cli))
                 self.runners[i].start()
-                logger.info("Runner %s started" % (i,))
+                logger.info("Runner %s started, job queue size: %d, running: %s"
+                            % (i, self.job_queue.qsize(), self.get_num_running()))
 
         self.on_results_ready()
 
