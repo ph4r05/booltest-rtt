@@ -333,6 +333,7 @@ class BoolRunner:
                 self.runners[i] = get_runner(shlex.split(cli))
                 logger.info("Starting async command %s %s, %s" % (job.name, job.vinfo, cli))
                 self.runners[i].start()
+                logger.info("Runner %s started" % (i,))
 
         self.on_results_ready()
 
