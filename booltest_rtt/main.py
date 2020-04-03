@@ -15,9 +15,10 @@ from jsonpath_ng import jsonpath, parse
 from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
     TestResultEnum, VariantStderr, VariantResults, BatteryErrors, \
     Subtests, Statistics, TestParameters, Pvalues, UserSettings, \
-    silent_close, silent_expunge_all, silent_rollback
+    silent_close, silent_expunge_all, silent_rollback, BatteryIntermediateResults
 from booltest.runner import AsyncRunner
 from .utils import merge_pvals, booltest_pval
+from sqlalchemy import and_, or_
 
 
 logger = logging.getLogger(__name__)
@@ -194,6 +195,121 @@ class BoolRunner:
             logger.error("Exception processing results: %s" % (e,), exc_info=e)
             logger.info("[[[%s]]]" % buff)
 
+    def load_job_exp(self, s):
+        job_db = s.query(Jobs).filter(Jobs.id == self.args.jid).first()
+        exp_db = s.query(Experiments).filter(Experiments.id == self.args.eid).first()
+
+        if not job_db:
+            logger.info("Results store fail, could not load Job with id %s" % (self.args.jid,))
+            raise ValueError("Results store fail, could not load Job with id %s" % (self.args.jid,))
+
+        if not exp_db:
+            logger.info("Results store fail, could not load Experiment with id %s" % (self.args.eid,))
+            raise ValueError("Results store fail, could not load Experiment with id %s" % (self.args.eid,))
+
+        return job_db, exp_db
+
+    def get_battery(self, s):
+        bat_db = s.query(Batteries)\
+            .filter(and_(
+                Batteries.experiment_id == self.args.eid,
+                Batteries.job_id == self.args.jid,
+                Batteries.name == self.args.battery,
+            )
+        ).first()
+        if bat_db:
+            return bat_db
+
+        bat_db = Batteries(name=self.args.battery, passed_tests=0, total_tests=1, alpha=self.args.alpha,
+                           experiment_id=self.args.eid, job_id=self.args.jid)
+        s.add(bat_db)
+        s.flush()
+        return bat_db
+
+    def on_partial_ready(self, br: BoolRes):
+        if self.args.no_db or self.args.eid < 0 or self.args.jid < 0:
+            logger.info("Results will not be inserted to the database. ")
+            return
+
+        s = None
+        try:
+            s = self.db.get_session()
+            job_db, exp_db = self.load_job_exp(s)
+            bat_db = self.get_battery(s)
+
+            if br.ret_code != 0:
+                berr = 'Job %d (%s-%s), ret_code %d' % (br.job.idx, br.job.name, br.job.vinfo, br.ret_code)
+                bat_err_db = BatteryErrors(message=berr, battery=bat_db)
+                s.add(bat_err_db)
+
+            # ok_results = [r for r in self.results if r.ret_code == 0]
+            # pvalue = -1
+            # if self.is_halving_battery():
+            #     pvals = [r.pval for r in ok_results]
+            #     npassed = sum([1 for r in ok_results if r.pval >= self.args.alpha])
+            #     pvalue = merge_pvals(pvals)[0] if len(pvals) > 1 else -1
+            #
+            # else:
+                # rejects = [r for r in ok_results if r.rejects]
+                # alpha = max([x.alpha for x in ok_results])
+                # pvalue = booltest_pval(nfails=len(rejects), ntests=len(ok_results), alpha=alpha)
+                # npassed = sum([1 for r in ok_results if not r.rejects])
+            #
+            # bat_db.total_tests = len(ok_results)
+            # bat_db.passed_tests = npassed
+            # bat_db.pvalue = pvalue
+            # bat_db = s.merge(bat_db)
+
+            passed = (br.pval >= self.args.alpha if br.is_halving else not br.rejects) if br.ret_code == 0 else None
+            passed_res = (
+                TestResultEnum.passed if passed else TestResultEnum.failed) if passed is not None else TestResultEnum.passed
+
+            test_db = Tests(name="%s %s" % (br.job.name, br.job.vinfo), partial_alpha=self.args.alpha,
+                            result=passed_res, test_index=br.job.idx, battery=bat_db)
+            s.add(test_db)
+
+            var_db = Variants(variant_index=0, test=test_db)
+            s.add(var_db)
+
+            uset_db = UserSettings(name="Cfg", value=br.job.vinfo, variant=var_db)
+            s.add(uset_db)
+
+            if br.ret_code != 0:
+                var_err_db = VariantStderr(message=br.stderr, variant=var_db)
+                s.add(var_err_db)
+                return
+
+            var_res_db = VariantResults(message=json.dumps(br.js_res), variant=var_db)
+            s.add(var_res_db)
+
+            sub_db = Subtests(subtest_index=0, variant=var_db)
+            s.add(sub_db)
+
+            if br.is_halving:
+                st_db = Statistics(name="pvalue", value=br.pval, result=passed_res, subtest=sub_db)
+                pv_db = Pvalues(value=br.pval, subtest=sub_db)
+                test_db.pvalue = br.pval
+                s.add(st_db)
+                s.add(pv_db)
+
+            else:
+                cpval = br.alpha - 1e-20 if br.rejects else 1
+                st_db = Statistics(name="pvalue", value=cpval, result=passed_res, subtest=sub_db)
+                tp_db = TestParameters(name="alpha", value=br.alpha, subtest=sub_db)
+                test_db.pvalue = cpval
+                s.add(st_db)
+                s.add(tp_db)
+
+            s.merge(test_db)
+            s.commit()
+
+        except Exception as e:
+            logger.warning("Exception in storing results: %s" % (e,), exc_info=e)
+
+        finally:
+            silent_expunge_all(s)
+            silent_close(s)
+
     def on_results_ready(self):
         if self.args.no_db or self.args.eid < 0 or self.args.jid < 0:
             logger.info("Results will not be inserted to the database. ")
@@ -202,21 +318,8 @@ class BoolRunner:
         s = None
         try:
             s = self.db.get_session()
-            job_db = s.query(Jobs).filter(Jobs.id == self.args.jid).first()
-            exp_db = s.query(Experiments).filter(Experiments.id == self.args.eid).first()
-
-            if not job_db:
-                logger.info("Results store fail, could not load Job with id %s" % (self.args.jid,))
-                return
-
-            if not exp_db:
-                logger.info("Results store fail, could not load Experiment with id %s" % (self.args.eid,))
-                return
-
-            bat_db = Batteries(name=self.args.battery, passed_tests=0, total_tests=1, alpha=self.args.alpha,
-                               experiment_id=self.args.eid, job_id=self.args.jid)
-            s.add(bat_db)
-            s.flush()
+            job_db, exp_db = self.load_job_exp(s)
+            bat_db = self.get_battery(s)
 
             bat_errors = ['Job %d (%s-%s), ret_code %d' % (r.job.idx, r.job.name, r.job.vinfo, r.ret_code)
                           for r in self.results if r.ret_code != 0]

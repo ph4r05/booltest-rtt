@@ -306,6 +306,15 @@ class VariantResults(Base):
     variant = relationship('Variants', foreign_keys=variant_id)
 
 
+class BatteryIntermediateResults(Base):
+    __tablename__ = 'battery_intermediate_results'
+    id = Column(BigInteger, primary_key=True)
+    message = Column(Text, nullable=False)
+    battery_id = Column(ForeignKey('batteries.id', name='battery_intermediate_results_battery_id', ondelete='CASCADE'),
+                        nullable=False, index=True, primary_key=False)
+    battery = relationship('Batteries', foreign_keys=battery_id)
+
+
 class UserSettings(Base):
     __tablename__ = 'user_settings'
     id = Column(BigInteger, primary_key=True)
