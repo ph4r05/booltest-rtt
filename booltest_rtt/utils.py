@@ -8,6 +8,13 @@ else:
     scipy_comb = scipy.special.comb
 
 
+def try_fnc(fnc):
+    try:
+        return fnc()
+    except:
+        pass
+
+
 def chunks(items, size):
     for i in range(0, len(items), size):
         yield items[i : i + size]

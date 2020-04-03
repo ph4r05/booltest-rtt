@@ -10,6 +10,7 @@ import shlex
 import time
 import queue
 import sys
+import os
 from jsonpath_ng import jsonpath, parse
 
 from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
@@ -17,7 +18,7 @@ from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
     Subtests, Statistics, TestParameters, Pvalues, UserSettings, \
     silent_close, silent_expunge_all, silent_rollback
 from booltest.runner import AsyncRunner
-from .utils import merge_pvals, booltest_pval
+from .utils import merge_pvals, booltest_pval, try_fnc
 
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,6 @@ class BoolRunner:
         self.results = []
 
     def init_config(self):
-        self.parallel_tasks = self.args.threads or 1
         try:
             with open(self.args.rtt_config) as fh:
                 self.rtt_config = json.load(fh)
@@ -91,11 +91,17 @@ class BoolRunner:
             self.bool_config = jsonpath('"toolkit-settings"."booltest"', self.rtt_config, False)
             if not self.bool_wrapper:
                 self.bool_wrapper = jsonpath("$.wrapper", self.bool_config, True)
+
             if not self.args.threads:
+                self.parallel_tasks = try_fnc(lambda: int(os.getenv('RTT_PARALLEL', None)))
+            if not self.parallel_tasks:
                 self.parallel_tasks = jsonpath('$."toolkit-settings".execution."max-parallel-tests"', self.rtt_config, True) or 1
 
         except Exception as e:
             logger.error("Could not load RTT config %s" % (e,), exc_info=e)
+
+        finally:
+            self.parallel_tasks = self.args.threads or try_fnc(lambda: int(os.getenv('RTT_PARALLEL', None))) or 1
 
         if not self.bool_wrapper:
             self.bool_wrapper = "\"%s\" -m booltest.booltest_main" % sys.executable
