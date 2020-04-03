@@ -332,7 +332,6 @@ class BoolRunner:
                     job = self.job_queue.get_nowait()  # type: BoolJob
                 except queue.Empty:
                     self.runners[i] = None
-                    logger.info("No more jobs, running: %s" % (self.get_num_running(), ))
                     continue
 
                 cli = '%s %s "%s"' % (self.bool_wrapper, job.cli, self.args.data_path)
