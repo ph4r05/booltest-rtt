@@ -98,7 +98,7 @@ class BoolRunner:
                 self.parallel_tasks = jsonpath('$."toolkit-settings".execution."max-parallel-tests"', self.rtt_config, True) or 1
 
         except Exception as e:
-            logger.error("Could not load RTT config %s" % (e,), exc_info=e)
+            logger.error("Could not load RTT config %s at %s" % (e, self.args.rtt_config), exc_info=e)
 
         finally:
             self.parallel_tasks = self.args.threads or try_fnc(lambda: int(os.getenv('RTT_PARALLEL', None))) or 1
