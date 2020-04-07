@@ -78,6 +78,7 @@ class BoolRunner:
         self.bool_config = None
         self.parallel_tasks = None
         self.bool_wrapper = None
+        self.tick_time = 0.15
         self.job_queue = queue.Queue(maxsize=0)
         self.runners = []  # type: List[Optional[AsyncRunner]]
         self.comp_jobs = []  # type: List[Optional[BoolJob]]
@@ -319,7 +320,7 @@ class BoolRunner:
                     % (self.parallel_tasks, self.job_queue.qsize(), self.bool_wrapper))
 
         while not self.job_queue.empty() or sum([1 for x in self.runners if x is not None]) > 0:
-            time.sleep(0.25)
+            time.sleep(self.tick_time)
 
             # Realloc work
             for i in range(len(self.runners)):
