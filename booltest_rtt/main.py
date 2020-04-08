@@ -246,10 +246,11 @@ class BoolRunner:
 
             bat_db.total_tests = len(ok_results)
             bat_db.passed_tests = npassed
-            bat_db.pvalue = pvalue
+            bat_db.pvalue = float(pvalue)
             bat_db = s.merge(bat_db)
 
             for rs in self.results:  # type: BoolRes
+                rs.pval = float(rs.pval)
                 passed = (rs.pval >= self.args.alpha if rs.is_halving else not rs.rejects) if rs.ret_code == 0 else None
                 passed_res = (TestResultEnum.passed if passed else TestResultEnum.failed) if passed is not None else TestResultEnum.passed
 
@@ -282,7 +283,7 @@ class BoolRunner:
                     s.add(pv_db)
 
                 else:
-                    cpval = rs.alpha - 1e-20 if rs.rejects else 1
+                    cpval = float(rs.alpha - 1e-20 if rs.rejects else 1)
                     st_db = Statistics(name="pvalue", value=cpval, result=passed_res, subtest=sub_db)
                     tp_db = TestParameters(name="alpha", value=rs.alpha, subtest=sub_db)
                     test_db.pvalue = cpval
