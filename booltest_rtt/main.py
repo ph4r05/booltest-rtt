@@ -12,6 +12,7 @@ import queue
 import sys
 import os
 from jsonpath_ng import jsonpath, parse
+from typing import Optional, List
 
 from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
     TestResultEnum, VariantStderr, VariantResults, BatteryErrors, \
