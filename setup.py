@@ -14,6 +14,7 @@ install_requires = [
     'requests',
     'coloredlogs',
     'jsonpath-ng',
+    'jsons',
 
     'sarge>=0.1.4',
     'SQLAlchemy>=1.1',

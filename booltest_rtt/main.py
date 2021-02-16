@@ -2,22 +2,27 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from datetime import datetime
+
 import coloredlogs
 import logging
 import json
+import jsons
 import itertools
 import shlex
 import time
 import queue
 import sys
 import os
+import hashlib
 from jsonpath_ng import jsonpath, parse
 from typing import Optional, List
+from sqlalchemy.sql import and_, or_, not_
 
 from .database import MySQL, Jobs, Experiments, Batteries, Variants, Tests, \
     TestResultEnum, VariantStderr, VariantResults, BatteryErrors, \
     Subtests, Statistics, TestParameters, Pvalues, UserSettings, \
-    silent_close, silent_expunge_all, silent_rollback
+    RttBoolResultsCache, silent_close, silent_expunge_all, silent_rollback
 from booltest.runner import AsyncRunner
 from .utils import merge_pvals, booltest_pval, try_fnc
 
@@ -76,19 +81,24 @@ class BoolRunner:
         self.args = None
         self.db = None
         self.rtt_config = None
+        self.rtt_config_hash = None
         self.bool_config = None
         self.parallel_tasks = None
         self.bool_wrapper = None
         self.tick_time = 0.15
+        self.res_session = None
+        self.res_cached = None  # type: Optional[RttBoolResultsCache]
         self.job_queue = queue.Queue(maxsize=0)
         self.runners = []  # type: List[Optional[AsyncRunner]]
         self.comp_jobs = []  # type: List[Optional[BoolJob]]
-        self.results = []
+        self.results = []  # type: List[Optional[BoolRes]]
 
     def init_config(self):
         try:
             with open(self.args.rtt_config) as fh:
-                self.rtt_config = json.load(fh)
+                dt = fh.read()
+                self.rtt_config = json.loads(dt)
+                self.rtt_config_hash = hashlib.sha256(dt).hexdigest()
 
             self.bool_config = jsonpath('"toolkit-settings"."booltest"', self.rtt_config, False)
             if not self.bool_wrapper:
@@ -171,12 +181,12 @@ class BoolRunner:
             time.sleep(1)
         logger.info("Async command finished")
 
-    def on_finished(self, job, runner, idx):
+    def on_finished(self, job: BoolJob, runner: Optional[AsyncRunner], idx):
         if runner.ret_code != 0:
             logger.warning("Return code of job %s is %s" % (idx, runner.ret_code))
             stderr = ("\n".join(runner.err_acc)).strip()
             br = BoolRes(job, runner.ret_code, None, job.is_halving, stderr=stderr)
-            self.results.append(br)
+            self.on_add_result(br)
             return
 
         results = runner.out_acc
@@ -196,14 +206,40 @@ class BoolRunner:
                 br.pval = [m.value for m in parse('$.inputs[0].res[1].halvings[0].pval').find(js)][0]
                 logger.info('halving pval: %5e' % br.pval)
 
-            self.results.append(br)
+            self.on_add_result(br)
 
         except Exception as e:
             logger.error("Exception processing results: %s" % (e,), exc_info=e)
             logger.info("[[[%s]]]" % buff)
 
+    def should_use_db(self):
+        return not self.args.no_db and self.args.eid >= 0 and self.args.jid >= 0
+
+    def on_add_result(self, br: BoolRes):
+        self.results.append(br)
+        if not self.should_use_db():
+            return
+
+        # Dump all results to db obj
+        logger.debug("Storing sub-result to the database")
+        if self.res_cached is None:
+            self.res_cached = self.init_cached_result_obj()
+
+        self.res_cached.booltest_results = jsons.dumps({'results': self.results})
+        self.res_cached.last_update = datetime.now()
+        try:
+            if self.res_cached.id is None:
+                self.res_session.add(self.res_cached)
+            else:
+                self.res_session.merge(self.res_cached)
+
+            self.res_session.flush()
+            self.res_session.commit()
+        except Exception as e:
+            logger.warning("Could not update result cache: %s" % (e,), exc_info=e)
+
     def on_results_ready(self):
-        if self.args.no_db or self.args.eid < 0 or self.args.jid < 0:
+        if not self.should_use_db():
             logger.info("Results will not be inserted to the database. ")
             return
 
@@ -294,6 +330,14 @@ class BoolRunner:
                 s.merge(test_db)
             s.commit()
 
+            try:
+                if self.res_cached and self.res_cached.id is not None:
+                    s.query(RttBoolResultsCache).filter(RttBoolResultsCache.id == self.res_cached.id).delete()
+                    s.commit()
+                    logger.info("Deleted cached results with ID %s" % (self.res_cached.id,))
+            except Exception as e:
+                logger.warning("Unable to remove result cache entry: %s" % (e,), exc_info=e)
+
         except Exception as e:
             logger.warning("Exception in storing results: %s" % (e,), exc_info=e)
 
@@ -307,6 +351,92 @@ class BoolRunner:
     def get_num_running(self):
         return sum([1 for x in self.runners if x])
 
+    def load_cached_results(self, jobs):
+        if not self.should_use_db():
+            return
+
+        self.load_cached_results_db()
+        if not self.res_cached:
+            return jobs
+
+        comp_jobs = set()
+        for r in self.results:
+            if not r.job:
+                continue
+            j = r.job
+            comp_jobs.add((j.cli, j.name, j.vinfo if j.vinfo else ''))
+
+        njobs = [j for j in jobs if (j.cli, j.name, j.vinfo if j.vinfo else '') not in comp_jobs]
+        logger.info("Cached results loaded, all jobs to compute: %s, computed: %s, to compute now: %s"
+                    % (len(jobs), len(comp_jobs), len(njobs)))
+        return njobs
+
+    def load_cached_results_db(self):
+        try:
+            self.res_session = s = self.db.get_session()
+            res_db = s.query(RttBoolResultsCache).\
+                filter(RttBoolResultsCache.job_id == self.args.jid)\
+                .order_by(RttBoolResultsCache.last_update.desc())\
+                .all()
+
+            if not res_db:
+                logger.info("No cached results found for job_id %s" % (self.args.jid,))
+                return
+
+            for cres in res_db:  # type: RttBoolResultsCache
+                if cres.alpha != self.args.alpha:
+                    continue
+
+                # Simple check, could be done on semantic equivalence of the test configuration
+                if cres.rtt_config_hash != self.args.self.rtt_config_hash:
+                    continue
+
+                self.res_cached = cres
+                break
+
+            if not self.res_cached:
+                logger.info("No suitable cached result found")
+                return
+
+            jsres_obj = json.loads(self.res_cached.booltest_results)
+            jsres = jsres_obj['results']
+            for jsbres in jsres:
+                jsjob = try_fnc(lambda: jsbres["job"])
+                cjob = None
+                if jsjob:
+                    cjob = BoolJob(cli=try_fnc(lambda: jsjob['cli']),
+                                   name=try_fnc(lambda: jsjob['name']),
+                                   vinfo=try_fnc(lambda: jsjob['vinfo']),
+                                   idx=try_fnc(lambda: jsjob['idx']))
+
+                bres = BoolRes(job=cjob,
+                               ret_code=try_fnc(lambda: jsbres['ret_code']),
+                               js_res=try_fnc(lambda: jsbres['js_res']),
+                               is_halving=try_fnc(lambda: jsbres['is_halving']),
+                               rejects=try_fnc(lambda: jsbres['rejects']),
+                               pval=try_fnc(lambda: jsbres['pval']),
+                               alpha=try_fnc(lambda: jsbres['alpha']),
+                               stderr=try_fnc(lambda: jsbres['stderr']))
+                if not bres.js_res:
+                    logger.info("Loaded result failed, no js_res for id: %s" % (self.res_cached.id,))
+                    continue
+
+                self.results.append(bres)
+
+        except Exception as e:
+            logger.warning("Exception in loading cached results: %s" % (e,), exc_info=e)
+
+    def init_cached_result_obj(self):
+        return RttBoolResultsCache(experiment_id=self.args.eid,
+                                   job_id=self.args.jid,
+                                   job_started=datetime.now(),
+                                   last_update=datetime.now(),
+                                   alpha=self.args.alpha,
+                                   data_path=self.args.data_path,
+                                   rtt_config=json.dumps(self.rtt_config),
+                                   rtt_config_hash=self.rtt_config_hash
+                                   )
+
     def work(self):
         jobs = [x for x in self.generate_jobs() if x.is_halving() == (self.is_halving_battery())]
         for i, j in enumerate(jobs):
@@ -314,6 +444,8 @@ class BoolRunner:
 
         self.runners = [None] * self.parallel_tasks
         self.comp_jobs = [None] * self.parallel_tasks
+
+        jobs = self.load_cached_results(jobs)
 
         for j in jobs:
             self.job_queue.put_nowait(j)

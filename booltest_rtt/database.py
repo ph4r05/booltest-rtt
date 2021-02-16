@@ -378,6 +378,20 @@ class Workers(Base):
     worker_aux = Column(Text, nullable=True)
 
 
+class RttBoolResultsCache(Base):
+    __tablename__ = 'rttbool_results_cache'
+    id = Column(BigInteger, primary_key=True)
+    experiment_id = Column(ForeignKey('experiments.id', name='rttbool_results_cache_experiments_id', ondelete='CASCADE'),
+                           nullable=False, index=True, primary_key=False)
+    job_id = Column(ForeignKey('jobs.id', name='rttbool_results_cache_jobs_id', ondelete='CASCADE'),
+                    nullable=False, index=True, primary_key=False)
+    job_started = Column(DateTime, nullable=True)
+    last_update = Column(DateTime, nullable=True)
+    alpha = Column(Float, nullable=False)
+    data_path = Column(Text, nullable=True)
+    rtt_config = Column(Text, nullable=True)
+    rtt_config_hash = Column(String(64), nullable=True)
+    booltest_results = Column(Text, nullable=True)
 
 
 
