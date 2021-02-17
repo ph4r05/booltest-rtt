@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import argparse
@@ -92,13 +92,14 @@ class BoolRunner:
         self.runners = []  # type: List[Optional[AsyncRunner]]
         self.comp_jobs = []  # type: List[Optional[BoolJob]]
         self.results = []  # type: List[Optional[BoolRes]]
+        self.num_all_jobs = 0
 
     def init_config(self):
         try:
             with open(self.args.rtt_config) as fh:
                 dt = fh.read()
                 self.rtt_config = json.loads(dt)
-                self.rtt_config_hash = hashlib.sha256(dt).hexdigest()
+                self.rtt_config_hash = hashlib.sha256(dt.encode("utf8")).hexdigest()
 
             self.bool_config = jsonpath('"toolkit-settings"."booltest"', self.rtt_config, False)
             if not self.bool_wrapper:
@@ -227,6 +228,8 @@ class BoolRunner:
 
         self.res_cached.booltest_results = jsons.dumps({'results': self.results})
         self.res_cached.last_update = datetime.now()
+        self.res_cached.all_jobs = self.num_all_jobs
+        self.res_cached.done_jobs = len(self.results)
         try:
             if self.res_cached.id is None:
                 self.res_session.add(self.res_cached)
@@ -388,7 +391,7 @@ class BoolRunner:
                     continue
 
                 # Simple check, could be done on semantic equivalence of the test configuration
-                if cres.rtt_config_hash != self.args.self.rtt_config_hash:
+                if cres.rtt_config_hash != self.rtt_config_hash:
                     continue
 
                 self.res_cached = cres
@@ -434,7 +437,9 @@ class BoolRunner:
                                    alpha=self.args.alpha,
                                    data_path=self.args.data_path,
                                    rtt_config=json.dumps(self.rtt_config),
-                                   rtt_config_hash=self.rtt_config_hash
+                                   rtt_config_hash=self.rtt_config_hash,
+                                   all_jobs=0,
+                                   done_jobs=0,
                                    )
 
     def work(self):
@@ -444,6 +449,7 @@ class BoolRunner:
 
         self.runners = [None] * self.parallel_tasks
         self.comp_jobs = [None] * self.parallel_tasks
+        self.num_all_jobs = len(jobs)
 
         jobs = self.load_cached_results(jobs)
 
