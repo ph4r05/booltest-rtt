@@ -114,7 +114,8 @@ class BoolRunner:
             logger.error("Could not load RTT config %s at %s" % (e, self.args.rtt_config), exc_info=e)
 
         finally:
-            self.parallel_tasks = self.args.threads or try_fnc(lambda: int(os.getenv('RTT_PARALLEL', None))) or 1
+            if self.parallel_tasks is None:
+                self.parallel_tasks = self.args.threads or try_fnc(lambda: int(os.getenv('RTT_PARALLEL', None))) or 1
 
         if not self.bool_wrapper:
             self.bool_wrapper = "\"%s\" -m booltest.booltest_main" % sys.executable
