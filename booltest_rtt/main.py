@@ -14,6 +14,7 @@ import time
 import queue
 import sys
 import os
+import random
 import hashlib
 from jsonpath_ng import jsonpath, parse
 from typing import Optional, List
@@ -453,6 +454,8 @@ class BoolRunner:
         self.num_all_jobs = len(jobs)
 
         jobs = self.load_cached_results(jobs)
+        if not self.args.no_rand:
+            random.shuffle(jobs)
 
         for j in jobs:
             self.job_queue.put_nowait(j)
@@ -528,6 +531,8 @@ class BoolRunner:
                             help='Experiment dir')
         parser.add_argument('--no-db', dest='no_db', action='store_const', const=True,
                             help='No database connection')
+        parser.add_argument('--no-rand', dest='no_rand', action='store_const', const=True,
+                            help='Do not randomize jobs being computed')
         parser.add_argument('--alpha', dest='alpha', type=float, default=1e-4,
                             help='Alpha value for pass/fail')
         parser.add_argument('-t', dest='threads', type=int, default=None,
