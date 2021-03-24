@@ -84,6 +84,9 @@ class BoolRunner:
         self.rtt_config = None
         self.rtt_config_hash = None
         self.bool_config = None
+        self.job_config = None
+        self.job_config_hash = None
+        self.bool_job_config = None
         self.parallel_tasks = None
         self.bool_wrapper = None
         self.tick_time = 0.15
@@ -121,6 +124,23 @@ class BoolRunner:
         if not self.bool_wrapper:
             self.bool_wrapper = "\"%s\" -m booltest.booltest_main" % sys.executable
 
+        self.init_config_job()
+
+    def init_config_job(self):
+        if not self.args.config:
+            return
+
+        try:
+            with open(self.args.config) as fh:
+                dt = fh.read()
+                self.job_config = json.loads(dt)
+                self.job_config_hash = hashlib.sha256(dt.encode("utf8")).hexdigest()
+
+            self.bool_job_config = jsonpath('"randomness-testing-toolkit"."booltest"', self.job_config, True)
+
+        except Exception as e:
+            logger.error("Could not load job config %s, file %s" % (e, self.args.config), exc_info=e)
+
     def init_db(self):
         if self.args.no_db:
             return
@@ -146,8 +166,18 @@ class BoolRunner:
             self.db = None
 
     def generate_jobs(self):
-        dcli = jsonpath('$.default-cli', self.bool_config, True) or ''
-        strategies = jsonpath('$.strategies', self.bool_config, False)
+        # Priority: job config default-cli, if not found, take default one from a global RTT config
+        dcli_jcfg = jsonpath('$.default-cli', self.bool_job_config, True)
+        dcli = dcli_jcfg or jsonpath('$.default-cli', self.bool_config, True) or ''
+
+        # Priority: if bool_job_config contains new strategies, take them, if not, take from a global RTT config
+        strategies_jcfg = jsonpath('$.strategies', self.bool_job_config, True)
+        strategies = strategies_jcfg or jsonpath('$.strategies', self.bool_config, False)
+
+        # strategies-aux from job config enables to add additional strategies.
+        strategies_aux_jcfg = jsonpath('$.strategies-aux', self.bool_job_config, True)
+        if strategies_aux_jcfg:
+            strategies += strategies_aux_jcfg
 
         for st in strategies:
             name = st['name']
@@ -390,10 +420,18 @@ class BoolRunner:
 
             for cres in res_db:  # type: RttBoolResultsCache
                 if cres.alpha != self.args.alpha:
+                    logger.info("Alpha mismatch: %s vs %s for ID: %s" % (cres.alpha, self.args.alpha, cres.id))
                     continue
 
                 # Simple check, could be done on semantic equivalence of the test configuration
                 if cres.rtt_config_hash != self.rtt_config_hash:
+                    logger.info("RTT config hash not matching: %s vs %s for ID: %s"
+                                % (cres.rtt_config_hash, self.rtt_config_hash, cres.id))
+                    continue
+
+                if cres.job_config_hash != self.job_config_hash:
+                    logger.info("Job config hash not matching: %s vs %s for ID: %s"
+                                % (cres.job_config_hash, self.job_config_hash, cres.id))
                     continue
 
                 self.res_cached = cres
@@ -440,6 +478,8 @@ class BoolRunner:
                                    data_path=self.args.data_path,
                                    rtt_config=json.dumps(self.rtt_config),
                                    rtt_config_hash=self.rtt_config_hash,
+                                   job_config=json.dumps(self.job_config),
+                                   job_config_hash=self.job_config_hash,
                                    all_jobs=0,
                                    done_jobs=0,
                                    )

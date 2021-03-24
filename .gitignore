@@ -2,7 +2,7 @@
 *.pyc
 dist
 bin
-booltest.egg-info
+*.egg-info
 Virtualenv
 build
 venv

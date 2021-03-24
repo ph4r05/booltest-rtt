@@ -394,6 +394,8 @@ class RttBoolResultsCache(Base):
     all_jobs = Column(Integer, nullable=False, default=0)
     done_jobs = Column(Integer, nullable=False, default=0)
     booltest_results = Column(Text, nullable=True)
+    job_config = Column(Text, nullable=True)
+    job_config_hash = Column(String(64), nullable=True)
 
 
 

@@ -42,3 +42,43 @@ Expected configuration in `rtt-settings.json`
     }
 }
 ```
+
+Configuration can be also specified per-job in the job config file:
+
+```json
+{
+  "randomness-testing-toolkit": {
+    "booltest": {
+      "strategies": [
+        {
+          "name": "v1",
+          "cli": "",
+          "variations": [
+            {
+              "bl": [128, 256, 384, 512],
+              "deg": [1, 2, 3],
+              "cdeg": [1, 2, 3],
+              "exclusions": []
+            }
+          ]
+        },
+        {
+          "name": "halving",
+          "cli": "--halving",
+          "variations": [
+            {
+              "bl": [128, 256, 384, 512],
+              "deg": [1, 2, 3],
+              "cdeg": [1, 2, 3],
+              "exclusions": []
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+- `strategies` overrides RTT-defined strategies
+- `strategies-aux` adds another strategies to the RTT-defined strategies
