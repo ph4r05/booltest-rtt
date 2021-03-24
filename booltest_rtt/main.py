@@ -231,9 +231,14 @@ class BoolRunner:
             br = BoolRes(job, 0, js, is_halving)
 
             if not is_halving:
-                br.rejects = [m.value for m in parse('$.inputs[0].res[0].rejects').find(js)][0]
-                br.alpha = [m.value for m in parse('$.inputs[0].res[0].ref_alpha').find(js)][0]
-                logger.info('rejects: %s, at alpha %.5e' % (br.rejects, br.alpha))
+                try:
+                    br.rejects = [m.value for m in parse('$.inputs[0].res[0].rejects').find(js)][0]
+                    br.alpha = [m.value for m in parse('$.inputs[0].res[0].ref_alpha').find(js)][0]
+                    logger.info('rejects: %s, at alpha %.5e' % (br.rejects, br.alpha))
+                except Exception as e:
+                    logger.warning('BoolTest could not be evaluated, probably missing reference distribution: %s, %s'
+                                   % (job.name, e))
+                    br.alpha = 1.0
 
             else:
                 br.pval = [m.value for m in parse('$.inputs[0].res[1].halvings[0].pval').find(js)][0]
@@ -312,7 +317,7 @@ class BoolRunner:
 
             else:
                 rejects = [r for r in ok_results if r.rejects]
-                alpha = max([x.alpha for x in ok_results])
+                alpha = max([x.alpha for x in ok_results if x.alpha is not None]) or self.args.alpha
                 pvalue = booltest_pval(nfails=len(rejects), ntests=len(ok_results), alpha=alpha)
                 npassed = sum([1 for r in ok_results if not r.rejects])
 
