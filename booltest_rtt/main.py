@@ -253,7 +253,7 @@ class BoolRunner:
         except Exception as e:
             logger.error("Exception processing results: %s, job: %s, ret code: %s" % (e, job, runner.ret_code),
                          exc_info=e)
-            logger.info("Failed BoolTest stderr: %s" % (runner.stderr, ))
+            logger.info("Failed BoolTest stderr: %s" % (stderr, ))
             logger.info("[[[%s]]]" % buff)
 
     def should_use_db(self):
