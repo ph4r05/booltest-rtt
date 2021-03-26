@@ -64,6 +64,9 @@ class BoolJob:
     def is_halving(self):
         return '--halving' in self.cli
 
+    def __repr__(self):
+        return 'BoolJob(%s, %s, %s)' % (self.name, self.vinfo, self.idx)
+
 
 class BoolRes:
     def __init__(self, job, ret_code, js_res, is_halving, rejects=False, pval=None, alpha=None, stderr=None):
@@ -223,6 +226,7 @@ class BoolRunner:
             return
 
         results = runner.out_acc
+        stderr = ("\n".join(runner.err_acc)).strip()
         buff = (''.join(results)).strip()
         try:
             js = json.loads(buff)
@@ -237,7 +241,7 @@ class BoolRunner:
                     logger.info('rejects: %s, at alpha %.5e' % (br.rejects, br.alpha))
                 except Exception as e:
                     logger.warning('BoolTest could not be evaluated, probably missing reference distribution: %s, %s'
-                                   % (job.name, e))
+                                   % (job, e))
                     br.alpha = 1.0
 
             else:
@@ -247,7 +251,9 @@ class BoolRunner:
             self.on_add_result(br)
 
         except Exception as e:
-            logger.error("Exception processing results: %s" % (e,), exc_info=e)
+            logger.error("Exception processing results: %s, job: %s, ret code: %s" % (e, job, runner.ret_code),
+                         exc_info=e)
+            logger.info("Failed BoolTest stderr: %s" % (runner.stderr, ))
             logger.info("[[[%s]]]" % buff)
 
     def should_use_db(self):
@@ -448,7 +454,7 @@ class BoolRunner:
 
             jsres_obj = json.loads(self.res_cached.booltest_results)
             jsres = jsres_obj['results']
-            for jsbres in jsres:
+            for ix, jsbres in enumerate(jsres):
                 jsjob = try_fnc(lambda: jsbres["job"])
                 cjob = None
                 if jsjob:
@@ -466,7 +472,8 @@ class BoolRunner:
                                alpha=try_fnc(lambda: jsbres['alpha']),
                                stderr=try_fnc(lambda: jsbres['stderr']))
                 if not bres.js_res:
-                    logger.info("Loaded result failed, no js_res for id: %s" % (self.res_cached.id,))
+                    logger.info("Loaded result failed, no js_res for id: %s, rec: %s, job %s"
+                                % (self.res_cached.id, ix, cjob))
                     continue
 
                 self.results.append(bres)
