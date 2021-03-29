@@ -102,6 +102,11 @@ class BoolRunner:
         self.num_all_jobs = 0
 
     def init_config(self):
+        if not self.args.threads:
+            self.parallel_tasks = try_fnc(lambda: int(os.getenv('BOOLTEST_PARALLEL', None)))
+        if not self.parallel_tasks:
+            self.parallel_tasks = try_fnc(lambda: int(os.getenv('RTT_PARALLEL', None)))
+
         try:
             with open(self.args.rtt_config) as fh:
                 dt = fh.read()
@@ -112,10 +117,13 @@ class BoolRunner:
             if not self.bool_wrapper:
                 self.bool_wrapper = jsonpath("$.wrapper", self.bool_config, True)
 
-            if not self.args.threads:
-                self.parallel_tasks = try_fnc(lambda: int(os.getenv('RTT_PARALLEL', None)))
+            if not self.parallel_tasks:
+                self.parallel_tasks = jsonpath('$."toolkit-settings".execution."max-parallel-tests-booltest"', self.rtt_config, True)
             if not self.parallel_tasks:
                 self.parallel_tasks = jsonpath('$."toolkit-settings".execution."max-parallel-tests"', self.rtt_config, True) or 1
+
+            # TODO: add memory-per-file limit. From file size and BoolTest params we can estimate memory usage and limit
+            # number of processes. Works fine if input data is passed as a file (not stdin, not supported now anyway).
 
         except Exception as e:
             logger.error("Could not load RTT config %s at %s" % (e, self.args.rtt_config), exc_info=e)
