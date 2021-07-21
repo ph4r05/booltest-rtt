@@ -16,7 +16,7 @@ import sys
 import os
 import random
 import hashlib
-from jsonpath_ng import jsonpath, parse
+from jsonpath_ng import parse
 from typing import Optional, List
 from sqlalchemy.sql import and_, or_, not_
 
@@ -30,6 +30,14 @@ from .utils import merge_pvals, booltest_pval, try_fnc
 
 logger = logging.getLogger(__name__)
 coloredlogs.install(level=logging.INFO)
+
+
+def rand_sleep_time(val=2.0, diff=0.5):
+    return max(0.0001, val + random.uniform(0, 2*diff) - diff)
+
+
+def rand_sleep(val=2.0, diff=0.5):
+    time.sleep(rand_sleep_time(val, diff))
 
 
 def jsonpath(path, obj, allow_none=False):
@@ -281,16 +289,23 @@ class BoolRunner:
         self.res_cached.last_update = datetime.now()
         self.res_cached.all_jobs = self.num_all_jobs
         self.res_cached.done_jobs = len(self.results)
-        try:
-            if self.res_cached.id is None:
-                self.res_session.add(self.res_cached)
-            else:
-                self.res_session.merge(self.res_cached)
 
-            self.res_session.flush()
-            self.res_session.commit()
-        except Exception as e:
-            logger.warning("Could not update result cache: %s" % (e,), exc_info=e)
+        for i in range(10):
+            try:
+                if self.res_cached.id is None:
+                    self.res_session.add(self.res_cached)
+                else:
+                    self.res_session.merge(self.res_cached)
+
+                self.res_session.flush()
+                self.res_session.commit()
+                return  # <--- return on success
+            except Exception as e:
+                logger.warning("Could not update result cache: %s" % (e,), exc_info=e)
+                self.res_session.rollback()
+                rand_sleep(0.1, 0.05)
+
+        logger.warning("Cached result store failed")
 
     def on_results_ready(self):
         if not self.should_use_db():
@@ -391,9 +406,12 @@ class BoolRunner:
                     logger.info("Deleted cached results with ID %s" % (self.res_cached.id,))
             except Exception as e:
                 logger.warning("Unable to remove result cache entry: %s" % (e,), exc_info=e)
+                s.rollback()
 
         except Exception as e:
             logger.warning("Exception in storing results: %s" % (e,), exc_info=e)
+            s.rollback()
+            raise
 
         finally:
             silent_expunge_all(s)
@@ -553,7 +571,18 @@ class BoolRunner:
                 logger.info("Runner %s started, job queue size: %d, running: %s"
                             % (i, self.job_queue.qsize(), self.get_num_running()))
 
-        self.on_results_ready()
+        # attempt to store results several times
+        attempts = 30
+        for i in range(attempts):
+            try:
+                self.on_results_ready()
+                return
+            except Exception as e:
+                logger.warning("Could not store results, attempt: %s, err: %s" % (i, e), exc_info=e)
+                rand_sleep(2, 0.5)
+
+        # If here, results were not stored
+        raise ValueError("Could not store results")
 
     def main(self):
         logger.debug('App started')
