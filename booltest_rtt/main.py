@@ -346,7 +346,8 @@ class BoolRunner:
 
             else:
                 rejects = [r for r in ok_results if r.rejects]
-                alpha = max([x.alpha for x in ok_results if x.alpha is not None]) or self.args.alpha
+                ok_alphas = [x.alpha for x in ok_results if x.alpha is not None]
+                alpha = max(ok_alphas) if ok_alphas else self.args.alpha
                 pvalue = booltest_pval(nfails=len(rejects), ntests=len(ok_results), alpha=alpha)
                 npassed = sum([1 for r in ok_results if not r.rejects])
 
