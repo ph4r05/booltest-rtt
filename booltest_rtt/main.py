@@ -528,8 +528,8 @@ class BoolRunner:
         for i, j in enumerate(jobs):
             j.idx = i
 
-        self.runners = [None] * self.parallel_tasks
-        self.comp_jobs = [None] * self.parallel_tasks
+        self.runners = [None] * self.parallel_tasks  # type: List[Optional[AsyncRunner]]
+        self.comp_jobs = [None] * self.parallel_tasks  # type: List[Optional[BoolJob]]
         self.num_all_jobs = len(jobs)
 
         jobs = self.load_cached_results(jobs)
@@ -623,7 +623,7 @@ class BoolRunner:
                             help='No database connection')
         parser.add_argument('--no-rand', dest='no_rand', action='store_const', const=True,
                             help='Do not randomize jobs being computed')
-        parser.add_argument('--alpha', dest='alpha', type=float, default=1e-4,
+        parser.add_argument('--alpha', dest='alpha', type=float, default=1e-5,
                             help='Alpha value for pass/fail')
         parser.add_argument('-t', dest='threads', type=int, default=None,
                             help='Maximum parallel threads')
