@@ -6,6 +6,7 @@ import enum
 import pymysql
 from . import errors
 from pymysql.err import Warning as MySQLWarning
+from urllib.parse import quote_plus
 
 pymysql.install_as_MySQLdb()
 
@@ -67,7 +68,7 @@ class MySQL(object):
         self.secure_query = None
 
     def get_connstring(self):
-        con_string = 'mysql://%s:%s@%s%s/%s' % (self.user, self.password,
+        con_string = 'mysql://%s:%s@%s%s/%s' % (self.user, quote_plus(self.password),
                                                 self.host, ':%s' % self.port,
                                                 self.db)
         return con_string
@@ -79,9 +80,9 @@ class MySQL(object):
 
             con_str = connstring
             if con_str is None and user is not None:
-                con_str = 'mysql://%s:%s@%s%s' % (user, password, self.host, ':%s' % self.port)
+                con_str = 'mysql://%s:%s@%s%s' % (user, quote_plus(password), self.host, ':%s' % self.port)
             if con_str is None and password is not None:
-                con_str = 'mysql://%s:%s@%s%s' % ('root', password, self.host, ':%s' % self.port)
+                con_str = 'mysql://%s:%s@%s%s' % ('root', quote_plus(password), self.host, ':%s' % self.port)
             if con_str is None:
                 con_str = self.get_connstring()
 
